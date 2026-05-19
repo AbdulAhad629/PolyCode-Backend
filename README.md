@@ -1,60 +1,33 @@
-# Quantum Programming Language — Official Course Repository
+# Quantum Programming Language
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-**Quantum** is a multi-paradigm, multi-syntax programming language. Write Python-style and C++-style code in the same `.sa` source file — Quantum understands both and runs them as one program.
+**Quantum** is a multi-syntax programming language: write Python-style and C++-style code in the same `.sa` file. Quantum understands both and runs them as one program.
 
 ```sa
 n = input("Enter")
 cout << n
 ```
 
-This repository is the **official learning platform** for Quantum: structured courses from beginner to advanced, with room for a website, quizzes, AI helper, downloadable notes, online execution, and project showcases.
+This repository is the **official Quantum course** — structured lessons from basic to advanced, with per-topic quizzes and a project showcase.
 
 ---
 
-## Features
+## Commands
 
-| Feature | Description |
-|--------|-------------|
-| **Mixed syntax** | Python + C++ (and more) in a single `.sa` file |
-| **Compiler** | `quantum file.sa` → native executable (`.exe` on Windows) |
-| **Interpreter** | `qrun file.sa` → run immediately, no extra output files |
-| **Structured curriculum** | Beginner → intermediate → advanced tracks |
-| **Extensible platform** | Hooks for web, quizzes, AI, and projects |
-
----
-
-## Quick start
-
-### Interpreter (run directly)
-
-```bash
-qrun hello.sa
-```
-
-### Compiler (build executable)
-
-```bash
-quantum hello.sa
-```
-
-On Windows, run the generated `.exe` after compile.
+| Tool | Command | Description |
+|------|---------|-------------|
+| **Interpreter** | `qrun file.sa` | Run immediately (no extra output files) |
+| **Compiler** | `quantum file.sa` | Build a native executable (e.g. `.exe` on Windows) |
 
 ---
 
 ## Example
 
-**`hello.sa`**
-
 ```sa
 print("Hello, Quantum!")
 ```
 
-**`mixed.sa`**
-
 ```sa
-n = input("Enter a number: ")
+n = input("Enter")
 cout << n
 ```
 
@@ -64,84 +37,79 @@ cout << n
 
 ```
 Quantum/
-├── README.md              # You are here
-├── CONTRIBUTING.md        # How to contribute
-├── LICENSE
+├── README.md
 ├── .gitignore
-│
-├── data/                  # Course curriculum (lessons by level)
-│   ├── beginner/          # 10 topics
-│   ├── intermediate/      # 9 topics
-│   └── advanced/          # 9 topics
-│
-├── docs/                  # Language & toolchain documentation
-├── examples/              # Standalone sample programs
-├── projects/              # Community & capstone projects
-├── quizzes/               # Assessments (per topic / level)
-├── website/               # Future web platform integration
-└── assets/                # Images, diagrams, branding
+├── data/                         # Lessons (in order)
+│   ├── 01-basic/                 # 1 — start here
+│   ├── 02-intermediate/          # 2
+│   └── 03-advanced/              # 3
+└── projects/
+    ├── beginner-projects/
+    ├── intermediate-projects/
+    └── advanced-projects/
 ```
-
-### Curriculum roadmap
-
-| Level | Topics | Folder |
-|-------|--------|--------|
-| **Beginner** | What is Quantum, installation, first program, I/O, mixed syntax, variables, conditions, loops, functions, projects | `data/beginner/` |
-| **Intermediate** | Memory sharing, language communication, files, modules, errors, Python/C++/C integration, advanced mixing, projects | `data/intermediate/` |
-| **Advanced** | Runtime, execution engine, performance, AI, web, APIs, custom modules, compiler internals, projects | `data/advanced/` |
-
-Each topic folder contains:
-
-- `README.md` — lesson template (introduction, syntax, examples, run instructions)
-- `example1.sa`, `example2.sa` — starter samples
-- `practice.md` — exercises (placeholder)
-- `notes.md` — supplementary notes (placeholder)
 
 ---
 
-## Lesson layout (per topic)
+## Curriculum (in order)
+
+### 1. Basic — `data/01-basic/`
+
+1. What is Quantum  
+2. Installation  
+3. First program  
+4. Input / output  
+5. Mixed syntax  
+6. Variables  
+7. Conditions  
+8. Loops  
+9. Functions  
+10. Basic projects  
+
+### 2. Intermediate — `data/02-intermediate/`
+
+1. Memory sharing  
+2. Language communication  
+3. File handling  
+4. Modules  
+5. Error handling  
+6. Python + C++ integration  
+7. Python + C integration  
+8. Advanced mixing  
+9. Intermediate projects  
+
+### 3. Advanced — `data/03-advanced/`
+
+1. Runtime system  
+2. Execution engine  
+3. Performance  
+4. AI integration  
+5. Web integration  
+6. API development  
+7. Custom modules  
+8. Compiler internals  
+9. Advanced projects  
+
+---
+
+## Topic layout
 
 ```
 data/<level>/<topic>/
 ├── README.md
 ├── example1.sa
 ├── example2.sa
-├── practice.md
-└── notes.md
+└── quizzes.md
 ```
 
-Content is **placeholder** during initial setup; lessons will be filled in over time.
+---
+
+## Projects
+
+Submit capstone work under `projects/beginner-projects/`, `projects/intermediate-projects/`, or `projects/advanced-projects/`.
 
 ---
 
-## Platform roadmap (this repo)
+## Status
 
-- [x] Scalable folder architecture
-- [ ] Full lesson content (beginner → advanced)
-- [ ] Website integration (`website/`)
-- [ ] Quizzes (`quizzes/`)
-- [ ] AI chatbot helper (docs + API hooks)
-- [ ] Downloadable notes export
-- [ ] Online code execution
-- [ ] Project showcase (`projects/`)
-
----
-
-## Contributing
-
-We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-## License
-
-This repository is licensed under the [MIT License](LICENSE).
-
----
-
-## Links
-
-<!-- Add when published -->
-- Website: _coming soon_
-- Compiler / interpreter releases: _coming soon_
-- Community: _coming soon_
+Lesson and quiz content are **placeholders** — structure is ready for content authors.

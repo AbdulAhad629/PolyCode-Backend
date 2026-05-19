@@ -1,22 +1,11 @@
 # Quantum Projects
 
-Capstone and community projects built with Quantum.
+Community and capstone projects organized by level.
 
-## How to submit
+| Folder | Level |
+|--------|--------|
+| [beginner-projects](./beginner-projects/) | Beginner capstones |
+| [intermediate-projects](./intermediate-projects/) | Intermediate capstones |
+| [advanced-projects](./advanced-projects/) | Advanced capstones |
 
-1. Create a folder: `projects/<your-name-or-title>/`
-2. Include:
-   - `README.md` — description, how to run, what you learned
-   - Source `.sa` files
-   - Optional screenshots or output samples
-3. Open a pull request (see [CONTRIBUTING.md](../CONTRIBUTING.md))
-
-## Showcase tiers
-
-| Tier | Description |
-|------|-------------|
-| Beginner | From `data/beginner/10-beginner-projects` |
-| Intermediate | From `data/intermediate/09-intermediate-projects` |
-| Advanced | From `data/advanced/09-advanced-projects` |
-
-<!-- Submissions coming soon -->
+Each submission should include a `README.md`, `.sa` source files, and run instructions (`qrun` / `quantum`).
