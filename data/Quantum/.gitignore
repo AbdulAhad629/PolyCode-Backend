@@ -1,0 +1,50 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build / runtime
+*.exe
+*.out
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+build/
+dist/
+bin/
+obj/
+target/
+
+# Quantum toolchain (local builds — adjust when publishing binaries)
+.quantum-cache/
+
+# Environment
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+logs/
+
+# Dependencies (website / tools — uncomment when added)
+# node_modules/
+# __pycache__/
+# .venv/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Generated notes (optional local overrides)
+**/notes.local.md
