@@ -46,6 +46,27 @@ router.post('/run-cpp', async (req, res) => {
     }
 });
 
+// POST run Python for lesson challenges (NumPy track, etc.)
+router.post('/run-python', async (req, res) => {
+    try {
+        const { code } = req.body || {};
+        if (!code || typeof code !== 'string') {
+            return res.status(400).json({ message: 'Python code is required' });
+        }
+
+        const result = await executePythonCode(code);
+        return res.json(result);
+    } catch (error) {
+        console.error('Python run error:', error);
+        return res.status(500).json({
+            stdout: '',
+            stderr: error.message,
+            error: error.message,
+            exitCode: 1,
+        });
+    }
+});
+
 // GET challenge by slug
 router.get('/:slug', async (req, res) => {
     const challenge = await Challenge.findOne({ slug: req.params.slug }).select('-testCases');
