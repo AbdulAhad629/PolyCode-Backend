@@ -3,6 +3,7 @@ const router = express.Router();
 const userController = require("./controllers/userController");
 const progressController = require("./controllers/progressController");
 const oopsCppProgressController = require("./controllers/oopsCppProgressController");
+const requireAuth = require("../../middleware/requireAuth");
 
 // ── User Auth Routes ─────────────────────────────────────────────────────────
 
@@ -18,8 +19,19 @@ router.get("/me", userController.getMe);
 /** GET /api/auth/user/:id */
 router.get("/user/:id", userController.getUserProfile);
 
+/** GET /api/auth/user/:id/avatar — profile picture image */
+router.get("/user/:id/avatar", userController.getAvatarImage);
+
 /** PUT /api/auth/user/:id */
-router.put("/user/:id", userController.updateProfile);
+router.put("/user/:id", requireAuth, userController.updateProfile);
+
+/** POST /api/auth/user/:id/avatar — cropped image → Google Drive */
+router.post(
+  "/user/:id/avatar",
+  express.json({ limit: "4mb" }),
+  requireAuth,
+  userController.uploadAvatar,
+);
 
 /** POST /api/auth/change-password */
 router.post("/change-password", userController.changePasswordHandler);

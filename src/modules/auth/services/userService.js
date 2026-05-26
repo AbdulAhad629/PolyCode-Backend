@@ -1,5 +1,11 @@
 const User = require("../models/User");
 
+function capitalizeNamePart(value = "") {
+  const trimmed = String(value).trim();
+  if (!trimmed) return "";
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
 /**
  * Register a new user
  * @param {Object} userData - User data (email, username, password, firstName, lastName)
@@ -22,8 +28,8 @@ async function registerUser(userData) {
       email,
       username,
       password,
-      firstName,
-      lastName,
+      firstName: capitalizeNamePart(firstName),
+      lastName: capitalizeNamePart(lastName),
     });
 
     await user.save();
@@ -106,10 +112,12 @@ async function getUserByEmail(email) {
 async function updateUserProfile(userId, updateData) {
   try {
     const allowedFields = [
+      "username",
       "firstName",
       "lastName",
       "bio",
       "profilePicture",
+      "profilePictureDriveId",
       "preferredLanguages",
     ];
     const filteredData = {};
@@ -119,6 +127,28 @@ async function updateUserProfile(userId, updateData) {
         filteredData[field] = updateData[field];
       }
     });
+
+    if (filteredData.firstName !== undefined) {
+      filteredData.firstName = capitalizeNamePart(filteredData.firstName);
+    }
+    if (filteredData.lastName !== undefined) {
+      filteredData.lastName = capitalizeNamePart(filteredData.lastName);
+    }
+
+    if (filteredData.username !== undefined) {
+      const nextUsername = String(filteredData.username).trim().toLowerCase();
+      if (nextUsername.length < 3 || nextUsername.length > 30) {
+        throw new Error("Username must be between 3 and 30 characters");
+      }
+      const taken = await User.findOne({
+        username: nextUsername,
+        _id: { $ne: userId },
+      });
+      if (taken) {
+        throw new Error("Username is already taken");
+      }
+      filteredData.username = nextUsername;
+    }
 
     const user = await User.findByIdAndUpdate(
       userId,
@@ -185,12 +215,34 @@ async function deleteUserAccount(userId) {
   }
 }
 
+/**
+ * Save profile picture URL (and optional Drive file id) after upload.
+ */
+async function setProfilePicture(userId, { url, driveFileId }) {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    {
+      profilePicture: url,
+      profilePictureDriveId: driveFileId || null,
+      updatedAt: Date.now(),
+    },
+    { new: true, runValidators: true },
+  );
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  return user.toJSON();
+}
+
 module.exports = {
   registerUser,
   loginUser,
   getUserById,
   getUserByEmail,
   updateUserProfile,
+  setProfilePicture,
   changePassword,
   deleteUserAccount,
 };
