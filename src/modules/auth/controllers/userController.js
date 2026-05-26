@@ -1,4 +1,9 @@
 const userService = require("../services/userService");
+const {
+  uploadProfileImage,
+  isDriveConfigured,
+  streamDriveFile,
+} = require("../../../services/googleDriveService");
 const jwt = require("jsonwebtoken");
 
 /**
@@ -103,18 +108,141 @@ async function getMe(req, res) {
   }
 }
 
+function assertSelfOrThrow(req, targetUserId) {
+  if (!req.userId || String(req.userId) !== String(targetUserId)) {
+    const err = new Error("You can only edit your own profile");
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
+function stripProtectedFields(body = {}) {
+  const { email, password, _id, ...rest } = body;
+  return rest;
+}
+
+function extractDriveFileIdFromUrl(url = "") {
+  const byQuery = url.match(/[?&]id=([^&]+)/);
+  if (byQuery) return byQuery[1];
+  const byPath = url.match(/\/d\/([^/]+)/);
+  if (byPath) return byPath[1];
+  return null;
+}
+
 /**
- * PUT /api/auth/user/:id - Update user profile
+ * PUT /api/auth/user/:id - Update user profile (email cannot be changed)
  */
 async function updateProfile(req, res) {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    assertSelfOrThrow(req, id);
+    const updateData = stripProtectedFields(req.body);
     const user = await userService.updateUserProfile(id, updateData);
     res.json({ message: "Profile updated successfully", user });
   } catch (error) {
     console.error("Update profile error:", error.message);
-    res.status(400).json({ error: error.message });
+    res
+      .status(error.statusCode || 400)
+      .json({ error: error.message });
+  }
+}
+
+/**
+ * POST /api/auth/user/:id/avatar - Upload cropped profile picture to Google Drive
+ * Body: { imageBase64: "data:image/jpeg;base64,..." }
+ */
+async function uploadAvatar(req, res) {
+  try {
+    const { id } = req.params;
+    assertSelfOrThrow(req, id);
+
+    if (!isDriveConfigured()) {
+      return res.status(503).json({
+        error:
+          "Profile photo upload is not configured. Set GOOGLE_DRIVE_CREDENTIALS_PATH (or CLIENT_EMAIL + PRIVATE_KEY) and GOOGLE_DRIVE_FOLDER_ID in backend .env, then restart the server.",
+      });
+    }
+
+    const { imageBase64 } = req.body;
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      return res.status(400).json({ error: "imageBase64 is required" });
+    }
+
+    const match = imageBase64.match(
+      /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/i,
+    );
+    if (!match) {
+      return res
+        .status(400)
+        .json({ error: "Invalid image. Use JPEG, PNG, or WebP." });
+    }
+
+    const mimeType = match[1].toLowerCase();
+    const buffer = Buffer.from(match[2], "base64");
+
+    if (buffer.length > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: "Image must be under 2 MB" });
+    }
+
+    const ext = mimeType.includes("png")
+      ? "png"
+      : mimeType.includes("webp")
+        ? "webp"
+        : "jpg";
+    const fileName = `polycode-avatar-${id}-${Date.now()}.${ext}`;
+
+    const { url, fileId } = await uploadProfileImage({
+      buffer,
+      mimeType,
+      fileName,
+    });
+
+    const user = await userService.setProfilePicture(id, {
+      url,
+      driveFileId: fileId,
+    });
+
+    res.json({
+      message: "Profile picture uploaded",
+      user,
+      profilePicture: url,
+    });
+  } catch (error) {
+    console.error("Upload avatar error:", error.message);
+    res
+      .status(error.statusCode || 400)
+      .json({ error: error.message });
+  }
+}
+
+/**
+ * GET /api/auth/user/:id/avatar — stream profile image (fixes Drive hotlink blocks)
+ */
+async function getAvatarImage(req, res) {
+  try {
+    const { id } = req.params;
+    const user = await userService.getUserById(id);
+
+    if (!user.profilePictureDriveId && !user.profilePicture) {
+      return res.status(404).json({ error: "No profile picture" });
+    }
+
+    const driveFileId =
+      user.profilePictureDriveId ||
+      extractDriveFileIdFromUrl(user.profilePicture);
+
+    if (driveFileId) {
+      const { stream, mimeType } = await streamDriveFile(driveFileId);
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      stream.pipe(res);
+      return;
+    }
+
+    return res.redirect(user.profilePicture);
+  } catch (error) {
+    console.error("Avatar image error:", error.message);
+    res.status(404).json({ error: "Could not load profile picture" });
   }
 }
 
@@ -163,6 +291,8 @@ module.exports = {
   getMe,
   getUserProfile,
   updateProfile,
+  uploadAvatar,
+  getAvatarImage,
   changePasswordHandler,
   deleteAccount,
 };

@@ -1,0 +1,196 @@
+const fs = require("fs");
+const path = require("path");
+const { Readable } = require("stream");
+const { google } = require("googleapis");
+
+const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+
+function useOAuthMode() {
+  return Boolean(
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET?.trim() &&
+      process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN?.trim(),
+  );
+}
+
+function loadServiceAccountCredentials() {
+  const jsonPath = process.env.GOOGLE_DRIVE_CREDENTIALS_PATH?.trim();
+  if (jsonPath) {
+    const absolutePath = path.isAbsolute(jsonPath)
+      ? jsonPath
+      : path.resolve(process.cwd(), jsonPath);
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(
+        `GOOGLE_DRIVE_CREDENTIALS_PATH file not found: ${absolutePath}`,
+      );
+    }
+    const parsed = JSON.parse(fs.readFileSync(absolutePath, "utf8"));
+    return {
+      client_email: parsed.client_email,
+      private_key: parsed.private_key,
+    };
+  }
+
+  const clientEmail = process.env.GOOGLE_DRIVE_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.GOOGLE_DRIVE_PRIVATE_KEY;
+
+  if (!clientEmail || !privateKey) {
+    return null;
+  }
+
+  return {
+    client_email: clientEmail,
+    private_key: privateKey.replace(/\\n/g, "\n"),
+  };
+}
+
+function hasServiceAccountCreds() {
+  return Boolean(loadServiceAccountCredentials());
+}
+
+function getOAuthDriveClient() {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID.trim(),
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET.trim(),
+    process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI?.trim() ||
+      "http://localhost:3333/oauth2callback",
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN.trim(),
+  });
+
+  return google.drive({ version: "v3", auth: oauth2Client });
+}
+
+function getServiceAccountDriveClient() {
+  const credentials = loadServiceAccountCredentials();
+  if (!credentials) {
+    throw new Error("Service account credentials are not configured.");
+  }
+
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
+    },
+    scopes: [DRIVE_FILE_SCOPE],
+  });
+
+  return google.drive({ version: "v3", auth });
+}
+
+function getDriveClient() {
+  if (useOAuthMode()) {
+    return { drive: getOAuthDriveClient(), mode: "oauth" };
+  }
+  return { drive: getServiceAccountDriveClient(), mode: "service_account" };
+}
+
+function isDriveConfigured() {
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+  if (!folderId) return false;
+  return useOAuthMode() || hasServiceAccountCreds();
+}
+
+function formatDriveError(error) {
+  const message = error?.message || "";
+  if (
+    message.includes("storage quota") ||
+    message.includes("Service Accounts do not have")
+  ) {
+    return (
+      "Personal Gmail cannot store files with a service account. " +
+      "Use OAuth instead: run `node scripts/google-drive-oauth-setup.js` and add " +
+      "GOOGLE_DRIVE_OAUTH_* variables to .env (see .env.example)."
+    );
+  }
+  return message || "Google Drive upload failed.";
+}
+
+/**
+ * Upload a profile image buffer to Google Drive.
+ * @returns {Promise<{ url: string, fileId: string }>}
+ */
+async function uploadProfileImage({ buffer, mimeType, fileName }) {
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+  if (!folderId) {
+    throw new Error("GOOGLE_DRIVE_FOLDER_ID is required.");
+  }
+
+  const { drive, mode } = getDriveClient();
+
+  const createParams = {
+    requestBody: {
+      name: fileName,
+      parents: [folderId],
+    },
+    media: {
+      mimeType,
+      body: Readable.from(buffer),
+    },
+    fields: "id, webViewLink",
+  };
+
+  if (mode === "service_account") {
+    createParams.supportsAllDrives = true;
+  }
+
+  let file;
+  try {
+    file = await drive.files.create(createParams);
+  } catch (error) {
+    throw new Error(formatDriveError(error));
+  }
+
+  const fileId = file.data.id;
+
+  // Public permission is optional — avatars are served via /api/auth/user/:id/avatar.
+  drive.permissions
+    .create({
+      fileId,
+      requestBody: { role: "reader", type: "anyone" },
+      ...(mode === "service_account" ? { supportsAllDrives: true } : {}),
+    })
+    .catch((permissionError) => {
+      console.warn("Drive: public permission skipped:", permissionError.message);
+    });
+
+  const url = buildDriveThumbnailUrl(fileId);
+  return { url, fileId, webViewLink: file.data.webViewLink || url };
+}
+
+function buildDriveThumbnailUrl(fileId) {
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w500`;
+}
+
+/**
+ * Stream a Drive file through the backend (reliable for <img src>).
+ */
+async function streamDriveFile(fileId) {
+  const { drive, mode } = getDriveClient();
+  const getParams = { fileId, fields: "mimeType" };
+  if (mode === "service_account") {
+    getParams.supportsAllDrives = true;
+  }
+
+  const meta = await drive.files.get(getParams);
+  const mediaParams = { fileId, alt: "media" };
+  if (mode === "service_account") {
+    mediaParams.supportsAllDrives = true;
+  }
+
+  const response = await drive.files.get(mediaParams, { responseType: "stream" });
+  return {
+    stream: response.data,
+    mimeType: meta.data.mimeType || "image/jpeg",
+  };
+}
+
+module.exports = {
+  uploadProfileImage,
+  streamDriveFile,
+  buildDriveThumbnailUrl,
+  isDriveConfigured,
+  useOAuthMode,
+};
