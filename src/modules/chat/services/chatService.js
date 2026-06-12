@@ -1,4 +1,5 @@
 const AssistantConversation = require("../models/AssistantConversation");
+const AssistantFeedback = require("../models/AssistantFeedback");
 const { buildSystemPrompt } = require("../assistantSystemPrompt");
 const { generateAssistantReply } = require("./groqService");
 
@@ -83,6 +84,7 @@ async function sendAssistantMessage({
   sessionId,
   userId = null,
   context = {},
+  assistantMessageId = null,
 }) {
   const trimmedMessage = String(message || "").trim();
   if (!trimmedMessage) {
@@ -106,9 +108,16 @@ async function sendAssistantMessage({
   const reply = await generateAssistantReply(groqMessages);
 
   const conversation = await findOrCreateConversation(sessionId, userId);
+  const assistantEntry = {
+    role: "assistant",
+    content: reply,
+  };
+  if (assistantMessageId) {
+    assistantEntry.clientMessageId = String(assistantMessageId).slice(0, 64);
+  }
   conversation.messages.push(
     { role: "user", content: trimmedMessage },
-    { role: "assistant", content: reply },
+    assistantEntry,
   );
 
   if (conversation.messages.length > MAX_STORED_MESSAGES) {
@@ -121,7 +130,80 @@ async function sendAssistantMessage({
     success: true,
     response: reply,
     conversationId: conversation._id,
+    assistantMessageId: assistantMessageId || null,
   };
+}
+
+async function submitAssistantFeedback({
+  sessionId,
+  messageId,
+  rating,
+  userMessage,
+  assistantMessage,
+  context = {},
+  userId = null,
+}) {
+  const trimmedSessionId = String(sessionId || "").trim();
+  const trimmedMessageId = String(messageId || "").trim();
+  const normalizedRating = String(rating || "").trim().toLowerCase();
+
+  if (!trimmedSessionId) {
+    const err = new Error("session_id is required.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!trimmedMessageId) {
+    const err = new Error("message_id is required.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!["like", "dislike"].includes(normalizedRating)) {
+    const err = new Error('rating must be "like" or "dislike".');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const trimmedUserMessage = String(userMessage || "").trim();
+  const trimmedAssistantMessage = String(assistantMessage || "").trim();
+  if (!trimmedUserMessage || !trimmedAssistantMessage) {
+    const err = new Error("user_message and assistant_message are required.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const safeContext = sanitizeContext(context);
+
+  await AssistantFeedback.findOneAndUpdate(
+    { sessionId: trimmedSessionId, messageId: trimmedMessageId },
+    {
+      sessionId: trimmedSessionId,
+      messageId: trimmedMessageId,
+      rating: normalizedRating,
+      userMessage: trimmedUserMessage.slice(0, 8000),
+      assistantMessage: trimmedAssistantMessage.slice(0, 8000),
+      context: safeContext,
+      userId: userId || null,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  const conversation = await AssistantConversation.findOne({
+    sessionId: trimmedSessionId,
+  });
+  if (conversation) {
+    const target = conversation.messages.find(
+      (m) =>
+        m.role === "assistant" &&
+        (m.clientMessageId === trimmedMessageId ||
+          String(m._id) === trimmedMessageId),
+    );
+    if (target) {
+      target.feedback = normalizedRating;
+      await conversation.save();
+    }
+  }
+
+  return { success: true, rating: normalizedRating };
 }
 
 async function getConversationBySession(sessionId, userId = null) {
@@ -159,6 +241,7 @@ async function clearConversation(sessionId, userId = null) {
 
 module.exports = {
   sendAssistantMessage,
+  submitAssistantFeedback,
   getConversationBySession,
   listUserConversations,
   clearConversation,
