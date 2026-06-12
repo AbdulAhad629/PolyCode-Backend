@@ -36,6 +36,13 @@ router.delete(
   chatController.clearAssistantSession,
 );
 
+router.post(
+  "/assistant/feedback",
+  assistantRateLimit,
+  optionalAuth,
+  chatController.submitAssistantFeedback,
+);
+
 router.get("/conversations", requireAuth, chatController.listConversations);
 
 module.exports = router;

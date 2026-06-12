@@ -12,6 +12,17 @@ const messageSchema = new mongoose.Schema(
       required: true,
       maxlength: 8000,
     },
+    clientMessageId: {
+      type: String,
+      trim: true,
+      maxlength: 64,
+      default: null,
+    },
+    feedback: {
+      type: String,
+      enum: ["like", "dislike"],
+      default: undefined,
+    },
   },
   { timestamps: true },
 );

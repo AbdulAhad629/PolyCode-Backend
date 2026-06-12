@@ -23,6 +23,7 @@ async function assistantChat(req, res) {
       history = [],
       session_id: sessionId = "",
       context = {},
+      assistant_message_id: assistantMessageId = "",
     } = req.body || {};
 
     const result = await chatService.sendAssistantMessage({
@@ -31,6 +32,7 @@ async function assistantChat(req, res) {
       sessionId: String(sessionId).trim(),
       userId: req.userId || null,
       context,
+      assistantMessageId: String(assistantMessageId).trim() || null,
     });
 
     return res.json(result);
@@ -62,6 +64,8 @@ async function getAssistantSession(req, res) {
         role: m.role,
         content: m.content,
         createdAt: m.createdAt,
+        clientMessageId: m.clientMessageId || null,
+        feedback: m.feedback || null,
       })),
       updatedAt: conversation.updatedAt,
     });
@@ -110,9 +114,37 @@ async function clearAssistantSession(req, res) {
   }
 }
 
+async function submitAssistantFeedback(req, res) {
+  try {
+    const {
+      session_id: sessionId = "",
+      message_id: messageId = "",
+      rating = "",
+      user_message: userMessage = "",
+      assistant_message: assistantMessage = "",
+      context = {},
+    } = req.body || {};
+
+    const result = await chatService.submitAssistantFeedback({
+      sessionId: String(sessionId).trim(),
+      messageId: String(messageId).trim(),
+      rating,
+      userMessage,
+      assistantMessage,
+      context,
+      userId: req.userId || null,
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return handleError(res, error, 400);
+  }
+}
+
 module.exports = {
   assistantChat,
   getAssistantSession,
   listConversations,
   clearAssistantSession,
+  submitAssistantFeedback,
 };
