@@ -1,4 +1,7 @@
 const User = require("../models/User");
+const {
+  syncPolycoderForEmailSafe,
+} = require("../../../services/mainUserSyncService");
 
 function capitalizeNamePart(value = "") {
   const trimmed = String(value).trim();
@@ -33,7 +36,9 @@ async function registerUser(userData) {
     });
 
     await user.save();
-    return user.toJSON();
+    const serializedUser = user.toJSON();
+    await syncPolycoderForEmailSafe(serializedUser);
+    return serializedUser;
   } catch (error) {
     throw error;
   }
@@ -63,7 +68,9 @@ async function loginUser(email, password) {
     user.lastLogin = new Date();
     await user.save();
 
-    return user.toJSON();
+    const serializedUser = user.toJSON();
+    await syncPolycoderForEmailSafe(serializedUser);
+    return serializedUser;
   } catch (error) {
     throw error;
   }
@@ -80,7 +87,11 @@ async function getUserById(userId) {
     if (!user) {
       throw new Error("User not found");
     }
-    return user.toJSON();
+    const serializedUser = user.toJSON();
+    if (filteredData.username !== undefined) {
+      await syncPolycoderForEmailSafe(serializedUser);
+    }
+    return serializedUser;
   } catch (error) {
     throw error;
   }
