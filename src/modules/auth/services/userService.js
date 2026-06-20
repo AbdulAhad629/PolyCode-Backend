@@ -1,9 +1,56 @@
 const User = require("../models/User");
+const {
+  syncPolycoderForEmailSafe,
+} = require("../../../services/mainUserSyncService");
 
 function capitalizeNamePart(value = "") {
   const trimmed = String(value).trim();
   if (!trimmed) return "";
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+const USERNAME_RE = /^[a-z0-9_][a-z0-9_.-]{2,29}$/;
+
+function slugifyUsername(value = "") {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "_")
+    .replace(/^[^a-z0-9_]+/, "")
+    .slice(0, 29);
+}
+
+/** Older accounts may lack username — create one from email so profiles work. */
+async function ensureUsername(userDoc) {
+  if (userDoc.username && USERNAME_RE.test(userDoc.username)) {
+    return userDoc;
+  }
+
+  const emailLocal = userDoc.email?.split("@")[0] || "user";
+  let base = slugifyUsername(emailLocal);
+  if (base.length < 3) {
+    base = `user_${String(userDoc._id).slice(-6)}`;
+  }
+
+  let candidate = base;
+  let suffix = 0;
+  while (
+    await User.findOne({ username: candidate, _id: { $ne: userDoc._id } })
+  ) {
+    suffix += 1;
+    candidate = `${base.slice(0, 24)}_${suffix}`;
+  }
+
+  userDoc.username = candidate;
+  await userDoc.save();
+  return userDoc;
+}
+
+async function toPublicUser(userDoc) {
+  const withUsername = await ensureUsername(userDoc);
+  const serializedUser = withUsername.toJSON();
+  await syncPolycoderForEmailSafe(serializedUser);
+  return serializedUser;
 }
 
 /**
@@ -33,7 +80,7 @@ async function registerUser(userData) {
     });
 
     await user.save();
-    return user.toJSON();
+    return toPublicUser(user);
   } catch (error) {
     throw error;
   }
@@ -63,7 +110,7 @@ async function loginUser(email, password) {
     user.lastLogin = new Date();
     await user.save();
 
-    return user.toJSON();
+    return toPublicUser(user);
   } catch (error) {
     throw error;
   }
@@ -80,6 +127,33 @@ async function getUserById(userId) {
     if (!user) {
       throw new Error("User not found");
     }
+    return toPublicUser(user);
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Get public user profile by username
+ * @param {string} username - Username handle
+ * @returns {Promise<Object>} User object
+ */
+async function getUserByUsername(username) {
+  try {
+    const normalizedUsername = String(username || "").trim().toLowerCase();
+    if (!/^[a-z0-9_][a-z0-9_.-]{2,29}$/.test(normalizedUsername)) {
+      throw new Error("User not found");
+    }
+
+    const user = await User.findOne({
+      username: normalizedUsername,
+      isActive: true,
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     return user.toJSON();
   } catch (error) {
     throw error;
@@ -240,6 +314,7 @@ module.exports = {
   registerUser,
   loginUser,
   getUserById,
+  getUserByUsername,
   getUserByEmail,
   updateUserProfile,
   setProfilePicture,

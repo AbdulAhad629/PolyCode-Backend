@@ -4,15 +4,13 @@ const {
   isDriveConfigured,
   streamDriveFile,
 } = require("../../../services/googleDriveService");
-const jwt = require("jsonwebtoken");
+const { signAccessToken } = require("../../../utils/jwt");
 
 /**
  * Helper: create a signed JWT for a user
  */
 function createToken(userId) {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET || "dev_secret", {
-    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  });
+  return signAccessToken(userId);
 }
 
 /**
@@ -89,22 +87,29 @@ async function getUserProfile(req, res) {
 }
 
 /**
- * GET /api/auth/me - Get current user from JWT
+ * GET /api/auth/username/:username - Get public user profile by username
+ */
+async function getUserByUsername(req, res) {
+  try {
+    const { username } = req.params;
+    const user = await userService.getUserByUsername(username);
+    res.json({ user });
+  } catch (error) {
+    console.error("Get user by username error:", error.message);
+    res.status(404).json({ error: error.message });
+  }
+}
+
+/**
+ * GET /api/auth/me - Get current user from JWT (requireAuth sets req.userId)
  */
 async function getMe(req, res) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "No token provided" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
-
-    const user = await userService.getUserById(decoded.id);
+    const user = await userService.getUserById(req.userId);
     res.json({ user });
   } catch (error) {
-    res.status(401).json({ error: "Invalid or expired token" });
+    console.error("Get me error:", error.message);
+    res.status(404).json({ error: error.message || "User not found" });
   }
 }
 
@@ -290,6 +295,7 @@ module.exports = {
   login,
   getMe,
   getUserProfile,
+  getUserByUsername,
   updateProfile,
   uploadAvatar,
   getAvatarImage,
