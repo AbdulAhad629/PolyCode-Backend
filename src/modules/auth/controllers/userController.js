@@ -100,6 +100,57 @@ async function getUserByUsername(req, res) {
   }
 }
 
+async function followUser(req, res) {
+  try {
+    const { username } = req.params;
+    const result = await userService.setFollowRelationship(
+      req.userId,
+      username,
+      true,
+    );
+    res.json({ message: "User followed", ...result });
+  } catch (error) {
+    console.error("Follow user error:", error.message);
+    res.status(error.message === "You cannot follow yourself" ? 400 : 404).json({
+      error: error.message,
+    });
+  }
+}
+
+async function unfollowUser(req, res) {
+  try {
+    const { username } = req.params;
+    const result = await userService.setFollowRelationship(
+      req.userId,
+      username,
+      false,
+    );
+    res.json({ message: "User unfollowed", ...result });
+  } catch (error) {
+    console.error("Unfollow user error:", error.message);
+    res.status(error.message === "You cannot follow yourself" ? 400 : 404).json({
+      error: error.message,
+    });
+  }
+}
+
+async function getFollowStatus(req, res) {
+  try {
+    const { username } = req.params;
+    const viewer = await userService.getUserById(req.userId);
+    const target = await userService.getUserByUsername(username);
+    const targetId = String(target._id || target.id);
+    const isFollowing = (viewer.following || []).some(
+      (id) => String(id) === targetId,
+    );
+
+    res.json({ isFollowing });
+  } catch (error) {
+    console.error("Follow status error:", error.message);
+    res.status(404).json({ error: error.message });
+  }
+}
+
 /**
  * GET /api/auth/me - Get current user from JWT (requireAuth sets req.userId)
  */
@@ -296,6 +347,9 @@ module.exports = {
   getMe,
   getUserProfile,
   getUserByUsername,
+  followUser,
+  unfollowUser,
+  getFollowStatus,
   updateProfile,
   uploadAvatar,
   getAvatarImage,

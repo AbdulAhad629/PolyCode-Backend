@@ -6,6 +6,8 @@ function handleError(res, error, fallbackStatus = 500) {
   const isDev = process.env.NODE_ENV !== "production";
   const isConfigError =
     error.code === "GROQ_NOT_CONFIGURED" ||
+    error.code === "POLYMENTOR_API_ERROR" ||
+    error.code === "POLYMENTOR_EMPTY_RESPONSE" ||
     /GROQ_API_KEY is not configured/i.test(error.message || "");
 
   let message = error.message;
@@ -24,6 +26,7 @@ async function assistantChat(req, res) {
       history = [],
       session_id: sessionId = "",
       context = {},
+      level = "",
       assistant_message_id: assistantMessageId = "",
     } = req.body || {};
 
@@ -33,6 +36,7 @@ async function assistantChat(req, res) {
       sessionId: String(sessionId).trim(),
       userId: req.userId || null,
       context,
+      level,
       assistantMessageId: String(assistantMessageId).trim() || null,
     });
 

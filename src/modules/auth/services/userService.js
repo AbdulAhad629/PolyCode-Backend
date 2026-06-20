@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const {
   syncPolycoderForEmailSafe,
+  updateMainFollowerEmailSafe,
 } = require("../../../services/mainUserSyncService");
 
 function capitalizeNamePart(value = "") {
@@ -154,7 +155,11 @@ async function getUserByUsername(username) {
       throw new Error("User not found");
     }
 
-    return user.toJSON();
+    const serializedUser = user.toJSON();
+    if (filteredData.username !== undefined) {
+      await syncPolycoderForEmailSafe(serializedUser);
+    }
+    return serializedUser;
   } catch (error) {
     throw error;
   }
@@ -240,6 +245,62 @@ async function updateUserProfile(userId, updateData) {
   }
 }
 
+async function setFollowRelationship(currentUserId, targetUsername, shouldFollow) {
+  const normalizedUsername = String(targetUsername || "").trim().toLowerCase();
+  if (!/^[a-z0-9_][a-z0-9_.-]{2,29}$/.test(normalizedUsername)) {
+    throw new Error("User not found");
+  }
+
+  const [currentUser, targetUser] = await Promise.all([
+    User.findById(currentUserId),
+    User.findOne({ username: normalizedUsername, isActive: true }),
+  ]);
+
+  if (!currentUser) {
+    throw new Error("Current user not found");
+  }
+  if (!targetUser) {
+    throw new Error("User not found");
+  }
+  if (String(currentUser._id) === String(targetUser._id)) {
+    throw new Error("You cannot follow yourself");
+  }
+
+  const alreadyFollowing = (currentUser.following || []).some(
+    (id) => String(id) === String(targetUser._id),
+  );
+
+  if (shouldFollow && !alreadyFollowing) {
+    currentUser.following = [...(currentUser.following || []), targetUser._id];
+    targetUser.followers = [...(targetUser.followers || []), currentUser._id];
+  } else if (!shouldFollow && alreadyFollowing) {
+    currentUser.following = (currentUser.following || []).filter(
+      (id) => String(id) !== String(targetUser._id),
+    );
+    targetUser.followers = (targetUser.followers || []).filter(
+      (id) => String(id) !== String(currentUser._id),
+    );
+  }
+
+  currentUser.followingCount = currentUser.following.length;
+  targetUser.followersCount = targetUser.followers.length;
+  currentUser.updatedAt = Date.now();
+  targetUser.updatedAt = Date.now();
+
+  await Promise.all([currentUser.save(), targetUser.save()]);
+  await updateMainFollowerEmailSafe({
+    targetEmail: targetUser.email,
+    followerEmail: currentUser.email,
+    follow: shouldFollow,
+  });
+
+  return {
+    isFollowing: shouldFollow,
+    user: currentUser.toJSON(),
+    targetUser: targetUser.toJSON(),
+  };
+}
+
 /**
  * Change user password
  * @param {string} userId - User ID
@@ -317,6 +378,7 @@ module.exports = {
   getUserByUsername,
   getUserByEmail,
   updateUserProfile,
+  setFollowRelationship,
   setProfilePicture,
   changePassword,
   deleteUserAccount,

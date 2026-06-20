@@ -1,5 +1,6 @@
 const { generateAssistantReply: generateGroqReply } = require("../chat/services/groqService");
 const { generateAssistantReply: generateCustomReply } = require("./customModelService");
+const { generateAssistantReply: generatePolyMentorReply } = require("./polymentorService");
 const {
   isPineconeConfigured,
   querySimilar,
@@ -7,7 +8,7 @@ const {
 } = require("./pineconeService");
 
 function getAssistantProvider() {
-  return (process.env.ASSISTANT_PROVIDER || "groq").trim().toLowerCase();
+  return (process.env.ASSISTANT_PROVIDER || "polymentor").trim().toLowerCase();
 }
 
 async function maybeAugmentWithRag(messages) {
@@ -45,9 +46,9 @@ async function maybeAugmentWithRag(messages) {
 
 /**
  * Single entry point for PolyMentor inference.
- * ASSISTANT_PROVIDER=groq | custom
+ * ASSISTANT_PROVIDER=polymentor | groq | custom
  */
-async function generateAssistantReply(messages) {
+async function generateAssistantReply(messages, options = {}) {
   const augmented = await maybeAugmentWithRag(messages);
   const provider = getAssistantProvider();
 
@@ -55,7 +56,11 @@ async function generateAssistantReply(messages) {
     return generateCustomReply(augmented);
   }
 
-  return generateGroqReply(augmented);
+  if (provider === "groq") {
+    return generateGroqReply(augmented);
+  }
+
+  return generatePolyMentorReply(augmented, options);
 }
 
 module.exports = {

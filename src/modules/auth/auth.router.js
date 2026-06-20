@@ -19,6 +19,27 @@ router.get("/me", requireAuth, userController.getMe);
 /** GET /api/auth/username/:username */
 router.get("/username/:username", userController.getUserByUsername);
 
+/** GET /api/auth/username/:username/follow-status */
+router.get(
+  "/username/:username/follow-status",
+  requireAuth,
+  userController.getFollowStatus,
+);
+
+/** POST /api/auth/username/:username/follow */
+router.post(
+  "/username/:username/follow",
+  requireAuth,
+  userController.followUser,
+);
+
+/** DELETE /api/auth/username/:username/follow */
+router.delete(
+  "/username/:username/follow",
+  requireAuth,
+  userController.unfollowUser,
+);
+
 /** GET /api/auth/user/:id */
 router.get("/user/:id", userController.getUserProfile);
 

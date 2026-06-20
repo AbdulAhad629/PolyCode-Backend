@@ -33,6 +33,7 @@ function sanitizeContext(context) {
     "code",
     "error",
     "challengeDescription",
+    "level",
   ];
   const out = {};
   for (const key of allowed) {
@@ -41,6 +42,13 @@ function sanitizeContext(context) {
     }
   }
   return out;
+}
+
+function normalizeAssistantLevel(level) {
+  const normalized = String(level || "").trim().toLowerCase();
+  return ["beginner", "intermediate", "advanced"].includes(normalized)
+    ? normalized
+    : "";
 }
 
 function buildGroqMessages(history, userMessage, context = {}) {
@@ -111,6 +119,7 @@ async function sendAssistantMessage({
   sessionId,
   userId = null,
   context = {},
+  level = "",
   assistantMessageId = null,
 }) {
   const trimmedMessage = String(message || "").trim();
@@ -127,12 +136,20 @@ async function sendAssistantMessage({
   }
 
   const normalizedHistory = normalizeHistory(history);
+  const assistantLevel =
+    normalizeAssistantLevel(level) || normalizeAssistantLevel(context.level);
+  const sanitizedContext = sanitizeContext({
+    ...context,
+    ...(assistantLevel ? { level: assistantLevel } : {}),
+  });
   const groqMessages = buildGroqMessages(
     normalizedHistory,
     trimmedMessage,
-    context,
+    sanitizedContext,
   );
-  const reply = await generateAssistantReply(groqMessages);
+  const reply = await generateAssistantReply(groqMessages, {
+    level: assistantLevel,
+  });
 
   const messageId =
     String(assistantMessageId || "").trim() ||
@@ -145,7 +162,7 @@ async function sendAssistantMessage({
     userMessage: trimmedMessage,
     assistantMessage: reply,
     liked: null,
-    context: sanitizeContext(context),
+    context: sanitizedContext,
   });
 
   return {
