@@ -210,6 +210,55 @@ async function getUserByEmail(email) {
   }
 }
 
+function toUserSummary(user = {}) {
+  return {
+    _id: user._id,
+    id: user._id,
+    username: user.username,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    bio: user.bio,
+    profilePicture: user.profilePicture,
+    profilePictureDriveId: user.profilePictureDriveId,
+    followersCount: user.followersCount || 0,
+    followingCount: user.followingCount || 0,
+  };
+}
+
+async function listUserConnections(username, type) {
+  const normalizedUsername = String(username || "").trim().toLowerCase();
+  if (!USERNAME_RE.test(normalizedUsername)) {
+    throw new Error("User not found");
+  }
+
+  const user = await User.findOne({
+    username: normalizedUsername,
+    isActive: true,
+  }).select("followers following");
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const ids = type === "following" ? user.following : user.followers;
+  if (!ids?.length) {
+    return [];
+  }
+
+  const users = await User.find({ _id: { $in: ids }, isActive: true })
+    .select(
+      "username firstName lastName email bio profilePicture profilePictureDriveId followersCount followingCount",
+    )
+    .lean();
+  const byId = new Map(users.map((row) => [String(row._id), row]));
+
+  return ids
+    .map((id) => byId.get(String(id)))
+    .filter(Boolean)
+    .map(toUserSummary);
+}
+
 /**
  * Update user profile
  * @param {string} userId - User ID
@@ -410,6 +459,7 @@ module.exports = {
   getUserById,
   getUserByUsername,
   getUserByEmail,
+  listUserConnections,
   updateUserProfile,
   setFollowRelationship,
   setProfilePicture,
