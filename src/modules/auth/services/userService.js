@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const {
   syncPolycoderForEmailSafe,
+  syncMainFollowersForEmailSafe,
   updateMainFollowerEmailSafe,
 } = require("../../../services/mainUserSyncService");
 
@@ -50,8 +51,39 @@ async function ensureUsername(userDoc) {
 async function toPublicUser(userDoc) {
   const withUsername = await ensureUsername(userDoc);
   const serializedUser = withUsername.toJSON();
-  await syncPolycoderForEmailSafe(serializedUser);
+  scheduleMainDbProfileSync(withUsername, serializedUser);
   return serializedUser;
+}
+
+function scheduleMainDbProfileSync(userDoc, serializedUser) {
+  setTimeout(() => {
+    Promise.all([
+      syncPolycoderForEmailSafe(serializedUser),
+      syncFollowersToMainDb(userDoc),
+    ]).catch((error) => {
+      console.warn("Main DB profile background sync failed:", error.message);
+    });
+  }, 0);
+}
+
+async function syncFollowersToMainDb(userDoc) {
+  const followerIds = (userDoc.followers || []).filter(Boolean);
+  if (!userDoc.email || followerIds.length === 0) {
+    await syncMainFollowersForEmailSafe({
+      targetEmail: userDoc.email,
+      followerEmails: [],
+    });
+    return;
+  }
+
+  const followerUsers = await User.find({ _id: { $in: followerIds } })
+    .select("email")
+    .lean();
+
+  await syncMainFollowersForEmailSafe({
+    targetEmail: userDoc.email,
+    followerEmails: followerUsers.map((follower) => follower.email),
+  });
 }
 
 /**
@@ -178,6 +210,55 @@ async function getUserByEmail(email) {
   }
 }
 
+function toUserSummary(user = {}) {
+  return {
+    _id: user._id,
+    id: user._id,
+    username: user.username,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    bio: user.bio,
+    profilePicture: user.profilePicture,
+    profilePictureDriveId: user.profilePictureDriveId,
+    followersCount: user.followersCount || 0,
+    followingCount: user.followingCount || 0,
+  };
+}
+
+async function listUserConnections(username, type) {
+  const normalizedUsername = String(username || "").trim().toLowerCase();
+  if (!USERNAME_RE.test(normalizedUsername)) {
+    throw new Error("User not found");
+  }
+
+  const user = await User.findOne({
+    username: normalizedUsername,
+    isActive: true,
+  }).select("followers following");
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const ids = type === "following" ? user.following : user.followers;
+  if (!ids?.length) {
+    return [];
+  }
+
+  const users = await User.find({ _id: { $in: ids }, isActive: true })
+    .select(
+      "username firstName lastName email bio profilePicture profilePictureDriveId followersCount followingCount",
+    )
+    .lean();
+  const byId = new Map(users.map((row) => [String(row._id), row]));
+
+  return ids
+    .map((id) => byId.get(String(id)))
+    .filter(Boolean)
+    .map(toUserSummary);
+}
+
 /**
  * Update user profile
  * @param {string} userId - User ID
@@ -289,6 +370,11 @@ async function setFollowRelationship(currentUserId, targetUsername, shouldFollow
     followerEmail: currentUser.email,
     follow: shouldFollow,
   });
+  setTimeout(() => {
+    syncFollowersToMainDb(targetUser).catch((error) => {
+      console.warn("Main DB followers background sync failed:", error.message);
+    });
+  }, 0);
 
   return {
     isFollowing: shouldFollow,
@@ -373,6 +459,7 @@ module.exports = {
   getUserById,
   getUserByUsername,
   getUserByEmail,
+  listUserConnections,
   updateUserProfile,
   setFollowRelationship,
   setProfilePicture,

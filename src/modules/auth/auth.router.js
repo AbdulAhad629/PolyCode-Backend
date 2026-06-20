@@ -26,6 +26,12 @@ router.get(
   userController.getFollowStatus,
 );
 
+/** GET /api/auth/username/:username/followers */
+router.get("/username/:username/followers", userController.getFollowers);
+
+/** GET /api/auth/username/:username/following */
+router.get("/username/:username/following", userController.getFollowing);
+
 /** POST /api/auth/username/:username/follow */
 router.post(
   "/username/:username/follow",

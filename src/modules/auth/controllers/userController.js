@@ -151,6 +151,28 @@ async function getFollowStatus(req, res) {
   }
 }
 
+async function getFollowers(req, res) {
+  try {
+    const { username } = req.params;
+    const users = await userService.listUserConnections(username, "followers");
+    res.json({ users });
+  } catch (error) {
+    console.error("Followers list error:", error.message);
+    res.status(404).json({ error: error.message });
+  }
+}
+
+async function getFollowing(req, res) {
+  try {
+    const { username } = req.params;
+    const users = await userService.listUserConnections(username, "following");
+    res.json({ users });
+  } catch (error) {
+    console.error("Following list error:", error.message);
+    res.status(404).json({ error: error.message });
+  }
+}
+
 /**
  * GET /api/auth/me - Get current user from JWT (requireAuth sets req.userId)
  */
@@ -350,6 +372,8 @@ module.exports = {
   followUser,
   unfollowUser,
   getFollowStatus,
+  getFollowers,
+  getFollowing,
   updateProfile,
   uploadAvatar,
   getAvatarImage,
