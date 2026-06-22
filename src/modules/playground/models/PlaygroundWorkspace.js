@@ -9,7 +9,20 @@ const playgroundWorkspaceSchema = new mongoose.Schema(
       index: true,
     },
     language: { type: String, required: true, trim: true, maxlength: 32 },
-    driveFolderId: { type: String, required: true },
+    /** Explorer folder paths, e.g. ["src", "lib/utils"] */
+    folders: { type: [String], default: [] },
+    activeFileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PlaygroundFile",
+      default: null,
+    },
+    selectedFolder: { type: String, default: "" },
+    expandedFolders: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({ "": true }),
+    },
+    /** Legacy — optional Google Drive folder id */
+    driveFolderId: { type: String, default: null },
   },
   { timestamps: true },
 );

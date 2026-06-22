@@ -23,6 +23,8 @@ const playgroundRunSchema = new mongoose.Schema(
       default: null,
     },
     fileName: { type: String, default: "", maxlength: 120 },
+    /** Snapshot of code that produced this run (console "chat" history) */
+    code: { type: String, default: "", maxlength: 512000 },
     output: { type: [outputLineSchema], default: [] },
     previewHTML: { type: String, default: null },
     durationMs: { type: Number, default: 0 },

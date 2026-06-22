@@ -9,8 +9,10 @@ const playgroundFileSchema = new mongoose.Schema(
       index: true,
     },
     language: { type: String, required: true, trim: true, maxlength: 32 },
-    name: { type: String, required: true, trim: true, maxlength: 120 },
-    driveFileId: { type: String, required: true },
+    name: { type: String, required: true, trim: true, maxlength: 160 },
+    content: { type: String, default: "", maxlength: 512000 },
+    /** Legacy Google Drive pointer — optional for older records */
+    driveFileId: { type: String, default: null },
     sortOrder: { type: Number, default: 0 },
   },
   { timestamps: true },

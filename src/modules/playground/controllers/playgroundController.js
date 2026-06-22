@@ -40,8 +40,56 @@ async function listFilesHandler(req, res) {
       return res.status(400).json({ error: "language is required." });
     }
 
-    const files = await playgroundStorage.listFiles(req.userId, language);
+    const payload = await playgroundStorage.listFiles(req.userId, language);
+    return res.json({ success: true, ...payload });
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
+async function listRecentFilesHandler(req, res) {
+  try {
+    const files = await playgroundStorage.listRecentFiles(req.userId, {
+      limit: req.query.limit,
+    });
     return res.json({ success: true, files });
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
+async function saveWorkspaceHandler(req, res) {
+  try {
+    const { language, folders, activeFileId, selectedFolder, expandedFolders } =
+      req.body || {};
+    if (!language) {
+      return res.status(400).json({ error: "language is required." });
+    }
+
+    const workspace = await playgroundStorage.saveWorkspace(req.userId, language, {
+      folders,
+      activeFileId,
+      selectedFolder,
+      expandedFolders,
+    });
+    return res.json({ success: true, workspace });
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
+async function importWorkspaceHandler(req, res) {
+  try {
+    const { language, files, workspace } = req.body || {};
+    if (!language) {
+      return res.status(400).json({ error: "language is required." });
+    }
+
+    const payload = await playgroundStorage.importWorkspace(req.userId, language, {
+      files,
+      workspace,
+    });
+    return res.json({ success: true, ...payload });
   } catch (error) {
     return handleError(res, error);
   }
@@ -95,6 +143,7 @@ async function saveRunHandler(req, res) {
       language,
       fileId,
       fileName,
+      code,
       output,
       previewHTML,
       durationMs,
@@ -108,6 +157,7 @@ async function saveRunHandler(req, res) {
       language,
       fileId,
       fileName,
+      code,
       output,
       previewHTML,
       durationMs,
@@ -134,6 +184,9 @@ async function listRunsHandler(req, res) {
 module.exports = {
   executeCodeHandler,
   listFilesHandler,
+  listRecentFilesHandler,
+  saveWorkspaceHandler,
+  importWorkspaceHandler,
   createFileHandler,
   updateFileHandler,
   deleteFileHandler,

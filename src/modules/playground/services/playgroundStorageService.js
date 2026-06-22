@@ -1,14 +1,6 @@
 const PlaygroundFile = require("../models/PlaygroundFile");
 const PlaygroundRun = require("../models/PlaygroundRun");
 const PlaygroundWorkspace = require("../models/PlaygroundWorkspace");
-const {
-  isDriveConfigured,
-  ensureDriveFolder,
-  uploadDriveFile,
-  updateDriveFileContent,
-  readDriveFileAsString,
-  deleteDriveFile,
-} = require("../../../services/googleDriveService");
 
 const DEFAULT_MAIN_FILES = {
   javascript: "main.js",
@@ -44,32 +36,13 @@ const DEFAULT_MAIN_FILES = {
 
 const DEFAULT_STARTERS = {
   javascript: "// Start coding here\nconsole.log('Hello, PolyCode!');\n",
+  typescript: "// Start coding here\nconsole.log('Hello, PolyCode!');\n",
   python: "# Start coding here\nprint('Hello, PolyCode!')\n",
+  html: "<!DOCTYPE html>\n<html>\n  <body>\n    <h1>Hello, PolyCode!</h1>\n  </body>\n</html>\n",
+  css: "body {\n  font-family: system-ui, sans-serif;\n}\n",
+  sql: "SELECT 'Hello, PolyCode!' AS message;\n",
   php: "<?php\n// Start coding here\necho 'Hello, PolyCode!';\n",
 };
-
-function getPlaygroundRootFolderId() {
-  return (
-    process.env.GOOGLE_DRIVE_PLAYGROUND_FOLDER_ID?.trim() ||
-    process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() ||
-    ""
-  );
-}
-
-function assertDriveReady() {
-  if (!isDriveConfigured()) {
-    const err = new Error(
-      "Google Drive is not configured for playground file storage.",
-    );
-    err.statusCode = 503;
-    throw err;
-  }
-  if (!getPlaygroundRootFolderId()) {
-    const err = new Error("GOOGLE_DRIVE_FOLDER_ID is required.");
-    err.statusCode = 503;
-    throw err;
-  }
-}
 
 function defaultMainFileName(language) {
   return DEFAULT_MAIN_FILES[language] || "main.txt";
@@ -79,89 +52,119 @@ function defaultStarterContent(language) {
   return DEFAULT_STARTERS[language] || "// Start coding here\n";
 }
 
-async function getLanguageFolderId(userId, language) {
-  assertDriveReady();
-
-  const existing = await PlaygroundWorkspace.findOne({ userId, language }).lean();
-  if (existing?.driveFolderId) return existing.driveFolderId;
-
-  const rootId = getPlaygroundRootFolderId();
-  const userFolderId = await ensureDriveFolder({
-    name: `playground_user_${userId}`,
-    parentId: rootId,
-  });
-  const languageFolderId = await ensureDriveFolder({
-    name: language,
-    parentId: userFolderId,
-  });
-
-  await PlaygroundWorkspace.findOneAndUpdate(
-    { userId, language },
-    { $set: { driveFolderId: languageFolderId } },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  );
-
-  return languageFolderId;
-}
-
-async function serializeFileRecord(record, includeContent = true) {
-  const base = {
+function serializeFile(record) {
+  return {
     id: String(record._id),
     name: record.name,
     language: record.language,
-    driveFileId: record.driveFileId,
-    sortOrder: record.sortOrder,
+    content: record.content ?? "",
+    sortOrder: record.sortOrder ?? 0,
     updatedAt: record.updatedAt,
   };
+}
 
-  if (!includeContent) return base;
-
-  try {
-    const content = await readDriveFileAsString(record.driveFileId);
-    return { ...base, content };
-  } catch {
-    return { ...base, content: "" };
+function serializeWorkspace(record) {
+  if (!record) {
+    return {
+      folders: [],
+      activeFileId: null,
+      selectedFolder: "",
+      expandedFolders: { "": true },
+    };
   }
+
+  return {
+    folders: Array.isArray(record.folders) ? record.folders : [],
+    activeFileId: record.activeFileId ? String(record.activeFileId) : null,
+    selectedFolder: record.selectedFolder || "",
+    expandedFolders: record.expandedFolders || { "": true },
+  };
+}
+
+async function getOrCreateWorkspace(userId, language) {
+  let workspace = await PlaygroundWorkspace.findOne({ userId, language });
+  if (!workspace) {
+    workspace = await PlaygroundWorkspace.create({
+      userId,
+      language,
+      folders: [],
+      expandedFolders: { "": true },
+    });
+  }
+  return workspace;
 }
 
 async function ensureDefaultFile(userId, language) {
-  const folderId = await getLanguageFolderId(userId, language);
   const name = defaultMainFileName(language);
   const content = defaultStarterContent(language);
 
   let record = await PlaygroundFile.findOne({ userId, language, name });
   if (record) {
-    return serializeFileRecord(record);
+    return serializeFile(record);
   }
-
-  const uploaded = await uploadDriveFile({
-    buffer: Buffer.from(content, "utf8"),
-    mimeType: "text/plain",
-    fileName: name,
-    folderId,
-  });
 
   record = await PlaygroundFile.create({
     userId,
     language,
     name,
-    driveFileId: uploaded.fileId,
+    content,
     sortOrder: 0,
   });
 
-  return { ...(await serializeFileRecord(record)), content };
+  const workspace = await getOrCreateWorkspace(userId, language);
+  if (!workspace.activeFileId) {
+    workspace.activeFileId = record._id;
+    await workspace.save();
+  }
+
+  return serializeFile(record);
 }
 
 async function listFiles(userId, language) {
+  const workspace = await getOrCreateWorkspace(userId, language);
   const rows = await PlaygroundFile.find({ userId, language })
     .sort({ sortOrder: 1, createdAt: 1 })
     .lean();
 
-  if (!rows.length) {
-    return [await ensureDefaultFile(userId, language)];
+  const files =
+    rows.length > 0
+      ? rows.map(serializeFile)
+      : [await ensureDefaultFile(userId, language)];
+
+  return {
+    files,
+    workspace: serializeWorkspace(workspace),
+  };
+}
+
+async function saveWorkspace(userId, language, patch = {}) {
+  const workspace = await getOrCreateWorkspace(userId, language);
+
+  if (Array.isArray(patch.folders)) {
+    workspace.folders = patch.folders
+      .map((folder) => String(folder || "").trim())
+      .filter(Boolean)
+      .slice(0, 50);
+  }
+  if (typeof patch.selectedFolder === "string") {
+    workspace.selectedFolder = patch.selectedFolder.slice(0, 160);
+  }
+  if (patch.expandedFolders && typeof patch.expandedFolders === "object") {
+    workspace.expandedFolders = patch.expandedFolders;
+  }
+  if (patch.activeFileId) {
+    const exists = await PlaygroundFile.findOne({
+      _id: patch.activeFileId,
+      userId,
+      language,
+    });
+    if (exists) {
+      workspace.activeFileId = exists._id;
+    }
   }
 
-  return Promise.all(rows.map((row) => serializeFileRecord(row)));
+  await workspace.save();
+  return serializeWorkspace(workspace);
 }
 
 async function createFile(userId, { language, name, content = "" }) {
@@ -172,39 +175,29 @@ async function createFile(userId, { language, name, content = "" }) {
     throw err;
   }
 
-  const exists = await PlaygroundFile.findOne({ userId, language, name: trimmedName });
+  const exists = await PlaygroundFile.findOne({
+    userId,
+    language,
+    name: trimmedName,
+  });
   if (exists) {
     const err = new Error("A file with that name already exists.");
     err.statusCode = 409;
     throw err;
   }
 
-  const folderId = await getLanguageFolderId(userId, language);
-  const uploaded = await uploadDriveFile({
-    buffer: Buffer.from(String(content), "utf8"),
-    mimeType: "text/plain",
-    fileName: trimmedName,
-    folderId,
-  });
-
   const count = await PlaygroundFile.countDocuments({ userId, language });
   const record = await PlaygroundFile.create({
     userId,
     language,
     name: trimmedName,
-    driveFileId: uploaded.fileId,
+    content: String(content),
     sortOrder: count,
   });
 
-  return {
-    id: String(record._id),
-    name: record.name,
-    language: record.language,
-    driveFileId: record.driveFileId,
-    sortOrder: record.sortOrder,
-    updatedAt: record.updatedAt,
-    content: String(content),
-  };
+  await getOrCreateWorkspace(userId, language);
+
+  return serializeFile(record);
 }
 
 async function updateFile(userId, fileId, { name, content }) {
@@ -216,10 +209,7 @@ async function updateFile(userId, fileId, { name, content }) {
   }
 
   if (typeof content === "string") {
-    await updateDriveFileContent({
-      fileId: record.driveFileId,
-      buffer: Buffer.from(content, "utf8"),
-    });
+    record.content = content;
   }
 
   if (name && name.trim() && name.trim() !== record.name) {
@@ -239,7 +229,7 @@ async function updateFile(userId, fileId, { name, content }) {
   }
 
   await record.save();
-  return serializeFileRecord(record);
+  return serializeFile(record);
 }
 
 async function removeFile(userId, fileId) {
@@ -260,9 +250,39 @@ async function removeFile(userId, fileId) {
     throw err;
   }
 
-  await deleteDriveFile(record.driveFileId);
   await PlaygroundFile.deleteOne({ _id: record._id });
+
+  const workspace = await PlaygroundWorkspace.findOne({
+    userId,
+    language: record.language,
+  });
+  if (workspace?.activeFileId?.equals(record._id)) {
+    const fallback = await PlaygroundFile.findOne({
+      userId,
+      language: record.language,
+    }).sort({ sortOrder: 1, createdAt: 1 });
+    workspace.activeFileId = fallback?._id || null;
+    await workspace.save();
+  }
+
   return { success: true };
+}
+
+async function listRecentFiles(userId, { limit = 40 } = {}) {
+  const cap = Math.min(Math.max(Number(limit) || 40, 1), 80);
+  const rows = await PlaygroundFile.find({ userId })
+    .sort({ updatedAt: -1 })
+    .limit(cap)
+    .lean();
+
+  return rows.map((row) => ({
+    id: String(row._id),
+    language: row.language,
+    name: row.name,
+    contentPreview: String(row.content || "").slice(0, 120),
+    updatedAt: row.updatedAt,
+    createdAt: row.createdAt,
+  }));
 }
 
 async function saveRun(userId, payload) {
@@ -270,6 +290,7 @@ async function saveRun(userId, payload) {
     language,
     fileId = null,
     fileName = "",
+    code = "",
     output = [],
     previewHTML = null,
     durationMs = 0,
@@ -280,6 +301,7 @@ async function saveRun(userId, payload) {
     language,
     fileId: fileId || null,
     fileName: String(fileName).slice(0, 120),
+    code: String(code).slice(0, 512000),
     output: Array.isArray(output)
       ? output.slice(0, 200).map((line) => ({
           type: line?.type || "stdout",
@@ -311,6 +333,7 @@ async function listRuns(userId, { language, fileId, limit = 10 }) {
     language: row.language,
     fileId: row.fileId ? String(row.fileId) : null,
     fileName: row.fileName,
+    code: row.code || "",
     output: row.output,
     previewHTML: row.previewHTML,
     durationMs: row.durationMs,
@@ -318,8 +341,64 @@ async function listRuns(userId, { language, fileId, limit = 10 }) {
   }));
 }
 
+/** Push a full local workspace to the cloud (first login / migration). */
+async function importWorkspace(userId, language, { files = [], workspace = {} }) {
+  if (!Array.isArray(files) || files.length === 0) {
+    return listFiles(userId, language);
+  }
+
+  const existingCount = await PlaygroundFile.countDocuments({ userId, language });
+  if (existingCount > 1) {
+    return listFiles(userId, language);
+  }
+
+  await PlaygroundFile.deleteMany({ userId, language });
+
+  const created = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const name = String(file.name || defaultMainFileName(language)).trim();
+    if (!name) continue;
+
+    const record = await PlaygroundFile.create({
+      userId,
+      language,
+      name,
+      content: String(file.content ?? defaultStarterContent(language)),
+      sortOrder: index,
+    });
+    created.push(record);
+  }
+
+  if (!created.length) {
+    return listFiles(userId, language);
+  }
+
+  const activeLocalId = workspace.activeFileId;
+  const activeIndex = files.findIndex((file) => file.id === activeLocalId);
+  const activeRecord = created[activeIndex >= 0 ? activeIndex : 0];
+
+  await PlaygroundWorkspace.findOneAndUpdate(
+    { userId, language },
+    {
+      $set: {
+        folders: Array.isArray(workspace.folders) ? workspace.folders : [],
+        selectedFolder: workspace.selectedFolder || "",
+        expandedFolders: workspace.expandedFolders || { "": true },
+        activeFileId: activeRecord._id,
+      },
+    },
+    { upsert: true, new: true },
+  );
+
+  return listFiles(userId, language);
+}
+
 module.exports = {
   listFiles,
+  listRecentFiles,
+  saveWorkspace,
+  importWorkspace,
   createFile,
   updateFile,
   removeFile,
