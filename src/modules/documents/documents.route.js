@@ -1,4 +1,5 @@
 const express = require("express");
+const { executeRubyCode } = require("../../services/executionService");
 const router = express.Router();
 const fs = require("fs").promises;
 const path = require("path");
@@ -821,6 +822,28 @@ router.post("/run-python", async (req, res) => {
     }
 
     const result = await executePythonCode(
+      code,
+      typeof stdin === "string" ? stdin : "",
+    );
+    return res.json(result);
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ stdout: "", stderr: err.message, error: err.message });
+  }
+});
+
+// POST /api/documents/run-ruby - execute Ruby lesson examples
+router.post("/run-ruby", async (req, res) => {
+  try {
+    const { code, stdin = "" } = req.body || {};
+    if (!code || typeof code !== "string") {
+      return res
+        .status(400)
+        .json({ error: "Request body must include a Ruby code string." });
+    }
+
+    const result = await executeRubyCode(
       code,
       typeof stdin === "string" ? stdin : "",
     );
