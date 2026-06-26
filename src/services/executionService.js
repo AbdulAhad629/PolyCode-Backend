@@ -498,11 +498,222 @@ async function executeCppCode(code, stdin = "") {
   });
 }
 
+let resolvedRubyCommand = null;
+let rubyCommandProbeDone = false;
+const PISTON_API_URL = "https://emkc.org/api/v2/piston/execute";
+const PROBE_TIMEOUT_MS = 4000;
+
+async function waitForChildExit(child, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("probe timeout"));
+    }, timeoutMs);
+
+    const finish = (fn) => (value) => {
+      clearTimeout(timer);
+      fn(value);
+    };
+
+    child.once("exit", finish((code) =>
+      code === 0 ? resolve() : reject(new Error("non-zero exit")),
+    ));
+    child.once("error", finish(reject));
+  });
+}
+
+async function executeRubyViaPiston(code) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS);
+  const apiKey = process.env.PISTON_API_TOKEN || process.env.PISTON_API_KEY;
+
+  const headers = { "Content-Type": "application/json" };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  try {
+    const response = await fetch(PISTON_API_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        language: "ruby",
+        version: "3.2.2",
+        files: [{ name: "script.rb", content: code }],
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      if (response.status === 401) {
+        throw new Error(
+          apiKey
+            ? "Piston API rejected the configured API key."
+            : "Ruby is not installed on this server. Install Ruby, set RUBY_EXECUTABLE, or add PISTON_API_TOKEN for remote execution.",
+        );
+      }
+      throw new Error(
+        body.trim() || `Piston API responded with status ${response.status}`,
+      );
+    }
+
+    const data = await response.json();
+    const run = data.run || {};
+    const exitCode = run.code ?? 1;
+    const stderr = (run.stderr || "").trimEnd();
+    const stdout = (run.stdout || "").trimEnd();
+
+    return {
+      stdout,
+      stderr,
+      error:
+        exitCode === 0 ? null : stderr || `Ruby exited with code ${exitCode}`,
+      exitCode,
+    };
+  } catch (error) {
+    const message =
+      error.name === "AbortError"
+        ? "Ruby execution timed out."
+        : error.message || "Could not reach the Ruby execution service.";
+    return {
+      stdout: "",
+      stderr: message,
+      error: message,
+      exitCode: 1,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveRubyCommand() {
+  if (resolvedRubyCommand) return resolvedRubyCommand;
+  if (rubyCommandProbeDone) {
+    throw new Error(
+      "No Ruby runtime found on server. Install Ruby or set RUBY_EXECUTABLE.",
+    );
+  }
+
+  const candidates =
+    process.platform === "win32"
+      ? [
+          process.env.RUBY_EXECUTABLE,
+          "C:\\Ruby32-x64\\bin\\ruby.exe",
+          "C:\\Ruby33-x64\\bin\\ruby.exe",
+          "C:\\Ruby34-x64\\bin\\ruby.exe",
+          "ruby",
+        ]
+      : [process.env.RUBY_EXECUTABLE, "ruby", "ruby3"];
+
+  for (const candidate of candidates.filter(Boolean)) {
+    const [cmd, ...args] = candidate.split(" ");
+    try {
+      const probe = await runSpawn(cmd, [...args, "--version"], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      await waitForChildExit(probe, PROBE_TIMEOUT_MS);
+      resolvedRubyCommand = candidate;
+      rubyCommandProbeDone = true;
+      return resolvedRubyCommand;
+    } catch (_) {
+      // Try next candidate
+    }
+  }
+
+  rubyCommandProbeDone = true;
+  throw new Error(
+    "No Ruby runtime found on server. Install Ruby or set RUBY_EXECUTABLE.",
+  );
+}
+
+/**
+ * Execute Ruby code
+ * @param {string} code - Ruby source code
+ * @param {string} stdin - Standard input (optional)
+ * @returns {Promise<Object>} Execution result
+ */
+async function executeRubyCode(code, stdin = "") {
+  await fs.mkdir(RUNTIME_TMP_PATH, { recursive: true });
+  const filename = `run_${crypto.randomBytes(8).toString("hex")}.rb`;
+  const filepath = path.join(RUNTIME_TMP_PATH, filename);
+
+  await fs.writeFile(filepath, code, "utf8");
+
+  let command;
+  try {
+    command = await resolveRubyCommand();
+  } catch (_) {
+    await fs.unlink(filepath).catch(() => {});
+    return executeRubyViaPiston(code);
+  }
+
+  const [cmd, ...baseArgs] = command.split(" ");
+
+  return new Promise(async (resolve, reject) => {
+    let child;
+    try {
+      child = await runSpawn(cmd, [...baseArgs, filepath], {
+        cwd: RUNTIME_TMP_PATH,
+        env: { ...process.env, RUBYOPT: "-EUTF-8" },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (e) {
+      await fs.unlink(filepath).catch(() => {});
+      if (e.code === "ENOENT") {
+        resolve(await executeRubyViaPiston(code));
+        return;
+      }
+      reject(e);
+      return;
+    }
+
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, RUN_TIMEOUT_MS);
+
+    child.stdout.on("data", (chunk) => {
+      stdout = appendWithCap(stdout, chunk.toString());
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = appendWithCap(stderr, chunk.toString());
+    });
+
+    child.on("error", async (e) => {
+      clearTimeout(timer);
+      await fs.unlink(filepath).catch(() => {});
+      reject(e);
+    });
+
+    child.on("close", async (exitCode) => {
+      clearTimeout(timer);
+      await fs.unlink(filepath).catch(() => {});
+      resolve({
+        stdout: stdout.trimEnd(),
+        stderr: stderr.trimEnd(),
+        error:
+          exitCode === 0
+            ? null
+            : stderr.trimEnd() || `Ruby exited with code ${exitCode}`,
+        exitCode,
+      });
+    });
+
+    if (stdin) {
+      child.stdin.write(stdin.endsWith("\n") ? stdin : `${stdin}\n`);
+    }
+    child.stdin.end();
+  });
+}
+
 module.exports = {
   executePythonCode,
   executeJavaScriptCode,
   executeJavaCode,
   executeCppCode,
+  executeRubyCode,
   runSpawn,
   resolvePythonCommand,
 };
