@@ -7,7 +7,8 @@ const {
     executePythonCode, 
     executeJavaScriptCode,
     executeJavaCode,
-    executeCppCode 
+    executeCppCode,
+    executeRubyCode,
 } = require('../services/executionService');
 
 // GET today's challenge
@@ -58,6 +59,30 @@ router.post('/run-python', async (req, res) => {
         return res.json(result);
     } catch (error) {
         console.error('Python run error:', error);
+        return res.status(500).json({
+            stdout: '',
+            stderr: error.message,
+            error: error.message,
+            exitCode: 1,
+        });
+    }
+});
+
+// POST run Ruby for lesson examples and challenges
+router.post('/run-ruby', async (req, res) => {
+    try {
+        const { code, stdin = '' } = req.body || {};
+        if (!code || typeof code !== 'string') {
+            return res.status(400).json({ message: 'Ruby code is required' });
+        }
+
+        const result = await executeRubyCode(
+            code,
+            typeof stdin === 'string' ? stdin : '',
+        );
+        return res.json(result);
+    } catch (error) {
+        console.error('Ruby run error:', error);
         return res.status(500).json({
             stdout: '',
             stderr: error.message,
