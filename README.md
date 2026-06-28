@@ -82,8 +82,10 @@ Example `GET /api/auth/progress/daily-xp` response:
 
 Import `postman/PolyCode-Polycoder-Progress.postman_collection.json` into Postman.
 
-- `GET /api/auth/polycoder/:username/progress` — full progress for a polycoder (PolyCode username)
+- `GET /api/auth/polycoder/:username/progress` — full progress for a polycoder (PolyCode username), including **`pointsByDay`** (daily points earned)
+- `GET /api/auth/polycoder/:username/daily-points` — **daily points only** (lighter response)
 - `GET /api/auth/polycoder/me/progress` — same payload for the logged-in user (`Authorization: Bearer <token>`)
+- `GET /api/auth/polycoder/me/daily-points` — daily points for the logged-in user
 
 Example `GET /api/auth/polycoder/jane_dev/progress`:
 
@@ -117,11 +119,49 @@ Example `GET /api/auth/polycoder/jane_dev/progress`:
     "oopsCpp": null
   },
   "dailyXp": {
-    "days": [],
-    "totalXp": 0,
+    "days": [
+      {
+        "date": "2026-06-23",
+        "pointsEarned": 28,
+        "lessonPoints": 25,
+        "readBonusPoints": 3,
+        "lessonsCompleted": 2,
+        "courses": ["oops-cpp"],
+        "lessons": [
+          {
+            "lessonId": "intro-classes",
+            "course": "oops-cpp",
+            "title": "Classes",
+            "points": 15
+          }
+        ],
+        "read": true
+      }
+    ],
+    "totalPoints": 128,
+    "totalXp": 128,
     "unreadDays": 0,
     "readBonusXp": 3
   },
+  "pointsByDay": [
+    {
+      "date": "2026-06-23",
+      "pointsEarned": 28,
+      "lessonPoints": 25,
+      "readBonusPoints": 3,
+      "lessonsCompleted": 2,
+      "courses": ["oops-cpp"],
+      "lessons": [
+        {
+          "lessonId": "intro-classes",
+          "course": "oops-cpp",
+          "title": "Classes",
+          "points": 15
+        }
+      ],
+      "read": true
+    }
+  ],
   "generatedAt": "2026-06-27T12:00:00.000Z"
 }
 ```

@@ -76,27 +76,58 @@ function serializeOopsCpp(course) {
 function serializeDailyXp(dailyXp) {
   if (!dailyXp) {
     return {
+      totalPoints: 0,
       totalXp: 0,
       unreadDays: 0,
       readBonusXp: 3,
-      recentDays: [],
+      days: [],
     };
   }
 
+  const days = (dailyXp.days ?? []).map((day) => ({
+    date: day.date,
+    pointsEarned: day.pointsEarned ?? day.xpEarned ?? 0,
+    xpEarned: day.xpEarned ?? day.pointsEarned ?? 0,
+    lessonPoints: day.lessonPoints ?? day.lessonXp ?? 0,
+    lessonXp: day.lessonXp ?? day.lessonPoints ?? 0,
+    readBonusPoints: day.readBonusPoints ?? day.readBonusXp ?? 0,
+    readBonusXp: day.readBonusXp ?? day.readBonusPoints ?? 0,
+    lessonsCompleted: day.lessonsCompleted ?? 0,
+    courses: day.courses ?? [],
+    lessons: (day.lessons ?? []).map((lesson) => ({
+      lessonId: lesson.lessonId,
+      course: lesson.course ?? "",
+      title: lesson.title ?? "",
+      points: lesson.points ?? lesson.xp ?? 0,
+      xp: lesson.xp ?? lesson.points ?? 0,
+      recordedAt: lesson.recordedAt ?? null,
+    })),
+    read: Boolean(day.read),
+  }));
+
+  const totalPoints = dailyXp.totalXp ?? 0;
+
   return {
-    totalXp: dailyXp.totalXp ?? 0,
+    totalPoints,
+    totalXp: totalPoints,
     unreadDays: dailyXp.unreadDays ?? 0,
     readBonusXp: dailyXp.readBonusXp ?? 3,
-    recentDays: (dailyXp.days ?? []).map((day) => ({
-      date: day.date,
-      lessonsCompleted: day.lessonsCompleted ?? 0,
-      courses: day.courses ?? [],
-      xpEarned: day.xpEarned ?? 0,
-      lessonXp: day.lessonXp ?? 0,
-      readBonusXp: day.readBonusXp ?? 0,
-      read: Boolean(day.read),
-    })),
+    days,
   };
+}
+
+function buildPointsByDay(dailyXp) {
+  const serialized = serializeDailyXp(dailyXp);
+  return serialized.days.map((day) => ({
+    date: day.date,
+    pointsEarned: day.pointsEarned,
+    lessonPoints: day.lessonPoints,
+    readBonusPoints: day.readBonusPoints,
+    lessonsCompleted: day.lessonsCompleted,
+    courses: day.courses,
+    lessons: day.lessons,
+    read: day.read,
+  }));
 }
 
 function buildOverview({ user, languageProgress, oopsCppProgress, dailyXp }) {
@@ -182,6 +213,8 @@ async function getProgressByUsername(username) {
     dailyXp,
   });
 
+  const dailyXpPayload = serializeDailyXp(dailyXp);
+
   return {
     polycoder,
     generatedAt: new Date().toISOString(),
@@ -193,10 +226,29 @@ async function getProgressByUsername(username) {
     courses: {
       oopsCpp: serializeOopsCpp(oopsCppProgress),
     },
-    dailyXp: serializeDailyXp(dailyXp),
+    pointsByDay: buildPointsByDay(dailyXp),
+    dailyXp: dailyXpPayload,
+  };
+}
+
+async function getDailyPointsByUsername(username) {
+  const progress = await getProgressByUsername(username);
+  return {
+    polycoder: progress.polycoder,
+    generatedAt: progress.generatedAt,
+    profile: {
+      id: progress.profile.id,
+      username: progress.profile.username,
+      displayName: progress.profile.displayName,
+    },
+    totalPoints: progress.dailyXp.totalPoints,
+    unreadDays: progress.dailyXp.unreadDays,
+    readBonusXp: progress.dailyXp.readBonusXp,
+    pointsByDay: progress.pointsByDay,
   };
 }
 
 module.exports = {
   getProgressByUsername,
+  getDailyPointsByUsername,
 };

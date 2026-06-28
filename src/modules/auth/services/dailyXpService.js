@@ -14,21 +14,40 @@ async function getOrCreate(userId) {
   return progress;
 }
 
+function formatLesson(lesson) {
+  const points = Number(lesson.xp) || 0;
+  return {
+    lessonId: lesson.lessonId,
+    course: lesson.course || "",
+    title: lesson.title || "",
+    points,
+    xp: points,
+    recordedAt: lesson.recordedAt
+      ? new Date(lesson.recordedAt).toISOString()
+      : null,
+  };
+}
+
 function formatDay(day) {
   const lessons = day.lessons || [];
   const courses = [...new Set(lessons.map((lesson) => lesson.course).filter(Boolean))];
   const lessonXp =
     day.lessonXp || lessons.reduce((sum, lesson) => sum + (Number(lesson.xp) || 0), 0);
   const readBonusXp = day.read ? day.readBonusXp || READ_BONUS_XP : 0;
+  const pointsEarned = lessonXp + readBonusXp;
 
   return {
     date: day.dateKey,
     lessonsCompleted: lessons.length,
     courses,
-    xpEarned: lessonXp + readBonusXp,
+    pointsEarned,
+    xpEarned: pointsEarned,
+    lessonPoints: lessonXp,
     lessonXp,
+    readBonusPoints: readBonusXp,
     readBonusXp,
     read: Boolean(day.read),
+    lessons: lessons.map(formatLesson),
   };
 }
 

@@ -246,6 +246,42 @@ async function getMyPolycoderProgress(req, res) {
 }
 
 /**
+ * GET /api/auth/polycoder/:username/daily-points - Daily points earned per day
+ */
+async function getPolycoderDailyPoints(req, res) {
+  try {
+    const { username } = req.params;
+    const data = await polycoderProgressService.getDailyPointsByUsername(username);
+    sendPolycoderProgress(res, data);
+  } catch (error) {
+    console.error("Get polycoder daily points error:", error.message);
+    res.status(error.statusCode || 400).json({ error: error.message });
+  }
+}
+
+/**
+ * GET /api/auth/polycoder/me/daily-points - Daily points for the authenticated polycoder
+ */
+async function getMyPolycoderDailyPoints(req, res) {
+  try {
+    const stats = await progressService.getUserDashboardStats(req.userId);
+    const username = stats?.user?.username;
+
+    if (!username) {
+      return res.status(404).json({
+        error: "No polycoder username on this account",
+      });
+    }
+
+    const data = await polycoderProgressService.getDailyPointsByUsername(username);
+    sendPolycoderProgress(res, data);
+  } catch (error) {
+    console.error("Get my polycoder daily points error:", error.message);
+    res.status(error.statusCode || 400).json({ error: error.message });
+  }
+}
+
+/**
  * GET /api/progress/dashboard/:userId - Get dashboard stats
  */
 async function getDashboardStats(req, res) {
@@ -272,4 +308,6 @@ module.exports = {
   getDashboardStats,
   getPolycoderProgress,
   getMyPolycoderProgress,
+  getPolycoderDailyPoints,
+  getMyPolycoderDailyPoints,
 };

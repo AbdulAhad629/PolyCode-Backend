@@ -95,8 +95,21 @@ router.get(
   progressController.getMyPolycoderProgress,
 );
 
+/** GET /api/auth/polycoder/me/daily-points — daily points for logged-in user */
+router.get(
+  "/polycoder/me/daily-points",
+  requireAuth,
+  progressController.getMyPolycoderDailyPoints,
+);
+
 /** GET /api/auth/polycoder/:username/progress — full progress JSON (Postman-friendly) */
 router.get("/polycoder/:username/progress", progressController.getPolycoderProgress);
+
+/** GET /api/auth/polycoder/:username/daily-points — daily points earned per day */
+router.get(
+  "/polycoder/:username/daily-points",
+  progressController.getPolycoderDailyPoints,
+);
 
 router.get(
   "/progress/:userId/:language",
